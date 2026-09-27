@@ -1,55 +1,47 @@
-from flask import Flask
 import os
-import threading
+from flask import Flask
+from threading import Thread
 import yfinance as yf
-import pandas as pd
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-TOKEN = os.getenv("BOT_TOKEN")
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
 
-app = Flask(__name__)
+app = Flask('')
 @app.route('/')
 def home():
-    return "Skelly Bot is Alive - 24/7"
+    return "Bot is alive!"
 
-def run_web():
+def run_flask():
     port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
-
-threading.Thread(target=run_web, daemon=True).start()
-
-def get_rsi(close, period=14):
-    delta = close.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-    rs = gain / loss
-    rsi = 100 - (100 / (1 + rs))
-    return rsi
+    app.run(host='0.0.0.0', port=port)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Yo! Skelly-bot Live 24/7 🤖\nSend ticker: BTC-USD, AAPL")
+    await update.message.reply_text("Skelly Bot is online! Use /price BTC")
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    ticker = update.message.text.strip().upper()
+async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Use: /price BTC or /price AAPL")
+        return
+    symbol = context.args[0].upper()
     try:
-        data = yf.download(ticker, period="3mo", interval="1d", progress=False)
-        if data.empty:
-            await update.message.reply_text(f"No data for {ticker}")
-            return
-        close = data['Close']
-        last_rsi = get_rsi(close).iloc[-1]
-        price = close.iloc[-1]
-        signal = "🔴 OVERBOUGHT" if last_rsi > 70 else "🟢 OVERSOLD" if last_rsi < 30 else "🟡 NEUTRAL"
-        await update.message.reply_text(f"📊 {ticker}\nPrice: ${float(price):.2f}\nRSI: {float(last_rsi):.2f}\n{signal}")
+        # Add -USD for crypto if needed
+        ticker = symbol if "-" in symbol or symbol in ["BTC", "ETH", "SOL"] else symbol
+        if ticker in ["BTC", "ETH", "SOL"]:
+            ticker = f"{ticker}-USD"
+        data = yf.Ticker(ticker)
+        price_val = data.history(period="1d")['Close'].iloc[-1]
+        await update.message.reply_text(f"{symbol}: ${price_val:.2f}")
     except Exception as e:
-        await update.message.reply_text(f"Error: {e}")
+        await update.message.reply_text(f"Could not get price for {symbol}")
 
 def main():
-    application = Application.builder().token(TOKEN).build()
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    application.run_polling()
+    Thread(target=run_flask).start()
+    app_bot = ApplicationBuilder().token(BOT_TOKEN).build()
+    app_bot.add_handler(CommandHandler("start", start))
+    app_bot.add_handler(CommandHandler("price", price))
+    print("Bot started...")
+    app_bot.run_polling()
 
 if __name__ == "__main__":
     main()
