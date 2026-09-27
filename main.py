@@ -9,7 +9,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "SkellysPro FINAL SMART + LEVERAGE"
+    return "SkellysPro FINAL SMART + LEVERAGE - LIVE"
 
 BINODEX_POCKET = ["EUR/USD OTC","GBP/USD OTC","USD/JPY OTC","AUD/USD OTC","USD/CAD OTC","EUR/GBP OTC","EUR/JPY OTC","GBP/JPY OTC","AUD/JPY OTC","NZD/USD OTC","EUR/AUD OTC","EUR/CAD OTC","GBP/AUD OTC","USD/CHF OTC","CHF/JPY OTC","EUR/USD","GBP/USD","USD/JPY","BTC/USD OTC","ETH/USD OTC"]
 FOREX_PAIRS = ["EUR/USD","GBP/USD","USD/JPY","AUD/USD","USD/CAD","NZD/USD","USD/CHF","EUR/GBP","EUR/JPY","EUR/AUD","GBP/JPY","AUD/JPY","CAD/JPY","CHF/JPY","NZD/JPY"]
@@ -57,6 +57,11 @@ def parse_timeframe(text):
     if "1d" in text: return "1D", 1440
     return "5M", 5
 
+def tf_label(mins):
+    if mins >= 1440: return f"{mins//1440}D"
+    if mins >= 60: return f"{mins//60}H"
+    return f"{mins}M"
+
 def get_tp_sl_by_timeframe(price, is_buy, asset_type, minutes):
     if asset_type == "gold":
         base_tp = 3; base_sl = 2
@@ -80,6 +85,17 @@ def get_tp_sl_by_timeframe(price, is_buy, asset_type, minutes):
         pips_tp = round(tp,2); pips_sl = round(sl,2)
     return tp_price, sl_price, pips_tp, pips_sl
 
+def timeframe_keyboard(asset):
+    kb = types.InlineKeyboardMarkup(row_width=4)
+    kb.row(
+        types.InlineKeyboardButton("5M", callback_data=f"an_5|{asset}"),
+        types.InlineKeyboardButton("15M", callback_data=f"an_15|{asset}"),
+        types.InlineKeyboardButton("1H", callback_data=f"an_60|{asset}"),
+        types.InlineKeyboardButton("4H", callback_data=f"an_240|{asset}")
+    )
+    kb.add(types.InlineKeyboardButton("🔙 Menu", callback_data="menu"))
+    return kb
+
 def main_menu():
     kb = types.InlineKeyboardMarkup(row_width=2)
     kb.add(
@@ -95,7 +111,7 @@ def main_menu():
 def paginated_list(items, page, prefix):
     per_page=10; start=page*per_page; chunk=items[start:start+per_page]
     kb=types.InlineKeyboardMarkup(row_width=1)
-    for it in chunk: kb.add(types.InlineKeyboardButton(f"📊 {it}", callback_data=f"analyze_{it}"))
+    for it in chunk: kb.add(types.InlineKeyboardButton(f"📊 {it}", callback_data=f"an_5|{it}"))
     nav=[]
     if page>0: nav.append(types.InlineKeyboardButton("⬅️ Prev", callback_data=f"{prefix}_{page-1}"))
     if start+per_page < len(items): nav.append(types.InlineKeyboardButton("Next ➡️", callback_data=f"{prefix}_{page+1}"))
@@ -106,7 +122,7 @@ def paginated_list(items, page, prefix):
 def coins_menu_paged(page):
     per_page=10; start=page*per_page; chunk=ALL_COINS[start:start+per_page]
     kb=types.InlineKeyboardMarkup(row_width=1)
-    for coin in chunk: kb.add(types.InlineKeyboardButton(f"{coin['symbol'].upper()} - ${coin['current_price']:,.2f}", callback_data=f"coin_{coin['id']}"))
+    for coin in chunk: kb.add(types.InlineKeyboardButton(f"{coin['symbol'].upper()} - ${coin['current_price']:,.2f}", callback_data=f"coin_{coin['id']}_5"))
     nav=[]
     if page>0: nav.append(types.InlineKeyboardButton("⬅️ Prev", callback_data=f"all_coins_{page-1}"))
     if start+per_page < len(ALL_COINS): nav.append(types.InlineKeyboardButton("Next ➡️", callback_data=f"all_coins_{page+1}"))
@@ -128,7 +144,7 @@ def setup_menu():
 def start(m):
     global ALL_COINS
     if not ALL_COINS: ALL_COINS=get_all_coins()
-    bot.send_message(m.chat.id, f"🔥 *SKELLY'S PRO - FINAL + LEVERAGE*\n\n✅ Any text reply\n✅ Auto 1H/4H TP/SL\n✅ Crypto Leverage added\n\n👇 Select:", reply_markup=main_menu(), parse_mode="Markdown")
+    bot.send_message(m.chat.id, f"🔥 *SKELLY'S PRO - FINAL + LEVERAGE*\n\n✅ Click buttons or type e.g BTC 1H\n✅ True TP/SL per timeframe\n✅ Crypto Leverage added\n\n👇 Select:", reply_markup=main_menu(), parse_mode="Markdown")
 
 @bot.message_handler(commands=['binodex','forex','indices','mt5','gold','crypto'])
 def cmds(m):
@@ -148,40 +164,61 @@ def cb(call):
     global ALL_COINS
     d=call.data
     try:
-        if d=="menu": bot.edit_message_text(f"🔥 *MAIN MENU*", call.message.chat.id, call.message.message_id, reply_markup=main_menu(), parse_mode="Markdown")
-        elif d.startswith("bin_pocket_"): page=int(d.split("_")[-1]); bot.edit_message_text(f"🔮 *BINODEX*", call.message.chat.id, call.message.message_id, reply_markup=paginated_list(BINODEX_POCKET,page,"bin_pocket"), parse_mode="Markdown")
-        elif d.startswith("forex_"): page=int(d.split("_")[-1]); bot.edit_message_text(f"💱 *FOREX*", call.message.chat.id, call.message.message_id, reply_markup=paginated_list(FOREX_PAIRS,page,"forex"), parse_mode="Markdown")
-        elif d.startswith("indices_"): page=int(d.split("_")[-1]); bot.edit_message_text(f"📈 *INDICES*", call.message.chat.id, call.message.message_id, reply_markup=paginated_list(INDICES_LIST,page,"indices"), parse_mode="Markdown")
-        elif d.startswith("mt5_"): page=int(d.split("_")[-1]); bot.edit_message_text(f"📊 *MT5*", call.message.chat.id, call.message.message_id, reply_markup=paginated_list(MT5_LIST,page,"mt5"), parse_mode="Markdown")
-        elif d.startswith("gold_"): page=int(d.split("_")[-1]); bot.edit_message_text(f"🥇 *GOLD*", call.message.chat.id, call.message.message_id, reply_markup=paginated_list(GOLD_LIST,page,"gold"), parse_mode="Markdown")
-        elif d.startswith("all_coins_"): page=int(d.split("_")[-1]); bot.edit_message_text(f"₿ *CRYPTO*", call.message.chat.id, call.message.message_id, reply_markup=coins_menu_paged(page), parse_mode="Markdown")
-        elif d.startswith("coin_"):
-            coin_id=d.replace("coin_",""); coin=next((c for c in ALL_COINS if c['id']==coin_id),None)
-            if coin:
-                price=coin['current_price']; is_buy=random.choice([True,False])
-                # LEVERAGE FOR CRYPTO
-                leverage = random.choice([5,10,15,20,25])
-                tp,sl,pt,ps=get_tp_sl_by_timeframe(price,is_buy,"crypto",5)
-                sig="LONG 🟢" if is_buy else "SHORT 🔴"
-                rsi,ema,sup,res=generate_analysis(coin['symbol'],price)
-                liq_price = price * (0.95 if is_buy else 1.05) if leverage==20 else price * (0.90 if is_buy else 1.10)
-                txt=f"₿ *{coin['name']} ({coin['symbol'].upper()}) - 5M FUTURES*\n\n💰 *Entry:* `${price:,.4f}`\n🤖 *Signal:* {sig} {leverage}X\n💥 *Leverage:* `{leverage}X Cross`\n🎯 *TP:* `${tp:,.4f}` (+${pt})\n🛑 *SL:* `${sl:,.4f}` (-${ps})\n💀 *Liq Price:* `${liq_price:,.4f}`\n\n📈 RSI:{rsi} | {ema}\n⚡ Conf: {random.randint(86,96)}%\n💼 Use 2-3% margin"
-                kb=types.InlineKeyboardMarkup(); kb.add(types.InlineKeyboardButton("🔙 Back", callback_data="all_coins_0"))
-                bot.send_message(call.message.chat.id, txt, parse_mode="Markdown", reply_markup=kb)
-        elif d.startswith("analyze_"):
-            asset=d.replace("analyze_",""); price=get_live_price(asset)
+        if d=="menu":
+            bot.edit_message_text(f"🔥 *MAIN MENU*", call.message.chat.id, call.message.message_id, reply_markup=main_menu(), parse_mode="Markdown")
+        elif d.startswith("bin_pocket_") or d.startswith("forex_") or d.startswith("indices_") or d.startswith("mt5_") or d.startswith("gold_") or d.startswith("all_coins_"):
+            prefix = d.rsplit("_",1)[0]; page=int(d.rsplit("_",1)[1])
+            if "bin_pocket" in prefix: bot.edit_message_text(f"🔮 *BINODEX*", call.message.chat.id, call.message.message_id, reply_markup=paginated_list(BINODEX_POCKET,page,"bin_pocket"), parse_mode="Markdown")
+            elif "forex" in prefix: bot.edit_message_text(f"💱 *FOREX*", call.message.chat.id, call.message.message_id, reply_markup=paginated_list(FOREX_PAIRS,page,"forex"), parse_mode="Markdown")
+            elif "indices" in prefix: bot.edit_message_text(f"📈 *INDICES*", call.message.chat.id, call.message.message_id, reply_markup=paginated_list(INDICES_LIST,page,"indices"), parse_mode="Markdown")
+            elif "mt5" in prefix: bot.edit_message_text(f"📊 *MT5*", call.message.chat.id, call.message.message_id, reply_markup=paginated_list(MT5_LIST,page,"mt5"), parse_mode="Markdown")
+            elif "gold" in prefix: bot.edit_message_text(f"🥇 *GOLD*", call.message.chat.id, call.message.message_id, reply_markup=paginated_list(GOLD_LIST,page,"gold"), parse_mode="Markdown")
+            elif "all_coins" in prefix: bot.edit_message_text(f"₿ *CRYPTO*", call.message.chat.id, call.message.message_id, reply_markup=coins_menu_paged(page), parse_mode="Markdown")
+        elif d.startswith("an_"):
+            # an_60|EUR/USD
+            mins_asset = d[3:].split("|",1)
+            minutes = int(mins_asset[0]); asset = mins_asset[1] if len(mins_asset)>1 else "EUR/USD"
+            tf_str = tf_label(minutes)
+            price = get_live_price(asset)
             if not price:
                 if "EUR" in asset: price=random.uniform(1.08,1.09)
-                elif "XAU" in asset: price=random.uniform(2030,2060)
+                elif "XAU" in asset or "GOLD" in asset: price=random.uniform(2030,2060)
                 elif "US30" in asset: price=random.uniform(38500,39000)
+                elif "BTC" in asset: price=random.uniform(67000,68500)
                 else: price=random.uniform(1.08,1.27)
-            is_buy=random.choice([True,False]); tp,sl,pt,ps=get_tp_sl_by_timeframe(price,is_buy,"forex",5)
-            sig="BUY CALL 🟢 STRONG" if is_buy else "SELL PUT 🔴 STRONG"
-            rsi,ema,sup,res=generate_analysis(asset,price)
-            txt=f"📊 *{asset} - 5M*\n💰 Entry: `{price:.5f}`\n🤖 {sig}\n🎯 TP: `{tp:.5f}` (+{pt})\n🛑 SL: `{sl:.5f}` (-{ps})\n📈 RSI:{rsi} | {ema}\n⏰ 5 mins\n⚡ {random.randint(84,96)}%"
-            kb=types.InlineKeyboardMarkup(); kb.add(types.InlineKeyboardButton("🔙 Menu", callback_data="menu"))
-            bot.send_message(call.message.chat.id, txt, parse_mode="Markdown", reply_markup=kb)
-    except Exception as e: print(e)
+            asset_type = "forex"
+            if any(x in asset.upper() for x in ["XAU","GOLD","XAG","SILVER"]): asset_type = "gold"
+            elif any(x in asset.upper() for x in ["US30","NAS","SPX","GER","UK100","VIX","JPN","AUS"]): asset_type = "indices"
+            elif any(x in asset.upper() for x in ["BTC","ETH","SOL","COIN"]): asset_type = "crypto"
+            is_buy = random.choice([True,False])
+            tp,sl,pt,ps = get_tp_sl_by_timeframe(price,is_buy,asset_type,minutes)
+            rsi,ema,sup,res = generate_analysis(asset, price)
+            sig = "BUY CALL 🟢 STRONG" if is_buy else "SELL PUT 🔴 STRONG"
+            if asset_type=="crypto":
+                lev = random.choice([10,15,20]); sig = "LONG 🟢" if is_buy else "SHORT 🔴"
+                txt = f"₿ *{asset} - {tf_str} FUTURES*\n\n💰 Entry: `${price:,.4f}`\n🤖 Signal: {sig} {lev}X\n💥 Leverage: `{lev}X Cross`\n🎯 TP: `${tp:,.4f}` (+{pt})\n🛑 SL: `${sl:,.4f}` (-{ps})\n💀 Liq: `${price*0.92 if is_buy else price*1.08:,.2f}`\n\n📈 RSI:{rsi} | {ema}\n⏰ {tf_str}\n⚡ {random.randint(84,96)}%"
+            else:
+                txt = f"📊 *{asset} - {tf_str}*\n\n💰 Entry: `{price:.5f}`\n🤖 {sig}\n🎯 TP: `{tp:.5f}` (+{pt})\n🛑 SL: `{sl:.5f}` (-{ps})\n\n📈 {tf_str}: RSI {rsi} | {ema}\n⏰ Expiry: {tf_str}\n⚡ {random.randint(84,96)}%"
+            bot.send_message(call.message.chat.id, txt, parse_mode="Markdown", reply_markup=timeframe_keyboard(asset))
+        elif d.startswith("coin_"):
+            # coin_bitcoin_60
+            parts = d.split("_"); coin_id = "_".join(parts[1:-1]) if len(parts)>2 else parts[1]; mins = int(parts[-1]) if parts[-1].isdigit() else 5
+            coin = next((c for c in ALL_COINS if c['id']==coin_id),None)
+            if coin:
+                price=coin['current_price']; is_buy=random.choice([True,False]); leverage = random.choice([5,10,15,20,25])
+                tp,sl,pt,ps=get_tp_sl_by_timeframe(price,is_buy,"crypto",mins); tf_str=tf_label(mins)
+                sig="LONG 🟢" if is_buy else "SHORT 🔴"; rsi,ema,sup,res=generate_analysis(coin['symbol'],price)
+                liq_price = price * (0.95 if is_buy else 1.05) if leverage==20 else price * (0.90 if is_buy else 1.10)
+                txt=f"₿ *{coin['name']} ({coin['symbol'].upper()}) - {tf_str} FUTURES*\n\n💰 Entry: `${price:,.4f}`\n🤖 Signal: {sig} {leverage}X\n💥 Leverage: `{leverage}X Cross`\n🎯 TP: `${tp:,.4f}` (+{pt})\n🛑 SL: `${sl:,.4f}` (-{ps})\n💀 Liq: `${liq_price:,.4f}`\n\n📈 RSI:{rsi} | {ema}\n⚡ Conf: {random.randint(86,96)}%\n⏰ {tf_str}"
+                kb = types.InlineKeyboardMarkup(row_width=4)
+                kb.row(
+                    types.InlineKeyboardButton("5M", callback_data=f"coin_{coin_id}_5"),
+                    types.InlineKeyboardButton("1H", callback_data=f"coin_{coin_id}_60"),
+                    types.InlineKeyboardButton("4H", callback_data=f"coin_{coin_id}_240")
+                )
+                kb.add(types.InlineKeyboardButton("🔙 Back", callback_data="all_coins_0"))
+                bot.send_message(call.message.chat.id, txt, parse_mode="Markdown", reply_markup=kb)
+    except Exception as e: print(f"CB Error {e} - {d}")
 
 @bot.message_handler(content_types=['text'])
 def handle_text(m):
@@ -191,47 +228,33 @@ def handle_text(m):
     if text in ["HI","HELLO","HEY","START","MENU","OK","YO","HELP"]:
         bot.send_message(m.chat.id, "🔥 *Main Menu* 👇", reply_markup=main_menu(), parse_mode="Markdown")
         return
-
     timeframe_str, minutes = parse_timeframe(original_text.lower())
     clean_asset = re.sub(r'\d+\s*(m|min|h|hour|d|day)', '', original_text, flags=re.IGNORECASE)
     clean_asset = clean_asset.replace("prediction","").replace("predict","").replace("signal","").replace("for","").replace("give me","").strip()
     if not clean_asset: clean_asset = original_text
-
     price = get_live_price(clean_asset)
     asset_type = "forex"
     if any(x in clean_asset.upper() for x in ["XAU","GOLD","XAG","SILVER"]): asset_type = "gold"
-    elif any(x in clean_asset.upper() for x in ["US30","NAS","SPX","GER","UK100","VIX"]): asset_type = "indices"
-    elif any(x in clean_asset.upper() for x in ["BTC","ETH","SOL","COIN"]): asset_type = "crypto"
-
+    elif any(x in clean_asset.upper() for x in ["US30","NAS","SPX","GER","UK100","VIX","JPN","AUS"]): asset_type = "indices"
+    elif any(x in clean_asset.upper() for x in ["BTC","ETH","SOL","COIN","PEPE","DOGE","SHIB"]): asset_type = "crypto"
     if not price:
         if "EUR" in text: price=random.uniform(1.08,1.09)
         elif "XAU" in text or "GOLD" in text: price=random.uniform(2030,2060)
         elif "BTC" in text: price=random.uniform(67000,68500)
         elif "US30" in text: price=random.uniform(38500,39000)
         else: price=random.uniform(1.08,1.27)
-
     is_buy = random.choice([True, False])
     tp, sl, pip_tp, pip_sl = get_tp_sl_by_timeframe(price, is_buy, asset_type, minutes)
     rsi,ema,sup,res = generate_analysis(clean_asset, price)
     sig = "BUY CALL 🟢 STRONG" if is_buy else "SELL PUT 🔴 STRONG"
-    expiry_map = {1:"1 min",5:"5 mins",15:"15 mins",30:"30 mins",60:"1 Hour",240:"4 Hours",1440:"1 Day"}
-    expiry = expiry_map.get(minutes, timeframe_str)
-
-    # ADD LEVERAGE IF CRYPTO
-    leverage_text = ""
-    liq_text = ""
+    leverage_text = ""; liq_text = ""
     if asset_type == "crypto":
-        lev = random.choice([10,15,20])
-        sig = "LONG 🟢" if is_buy else "SHORT 🔴"
+        lev = random.choice([10,15,20]); sig = "LONG 🟢" if is_buy else "SHORT 🔴"
         leverage_text = f"\n💥 *Leverage:* `{lev}X Cross`"
         liq = price * 0.92 if is_buy else price * 1.08
         liq_text = f"\n💀 *Liq:* `${liq:,.2f}`"
-
-    txt = f"📊 *{clean_asset.upper()} - {timeframe_str}*\n\n💰 *Entry:* `{price:.5f}`\n🤖 *Signal:* {sig}{leverage_text}\n🎯 *TP:* `{tp:.5f}` (+{pip_tp})\n🛑 *SL:* `{sl:.5f}` (-{pip_sl}){liq_text}\n\n📈 *{timeframe_str}:* RSI {rsi} | {ema}\n⏰ *Expiry:* {expiry}\n⚡ *Conf:* {random.randint(84,96)}%"
-
-    kb = types.InlineKeyboardMarkup(row_width=2)
-    kb.add(types.InlineKeyboardButton("5M", callback_data=f"analyze_{clean_asset}"), types.InlineKeyboardButton("1H", callback_data=f"analyze_{clean_asset}"), types.InlineKeyboardButton("🔙 Menu", callback_data="menu"))
-    bot.send_message(m.chat.id, txt, parse_mode="Markdown", reply_markup=kb)
+    txt = f"📊 *{clean_asset.upper()} - {timeframe_str}*\n\n💰 *Entry:* `{price:.5f}`\n🤖 *Signal:* {sig}{leverage_text}\n🎯 *TP:* `{tp:.5f}` (+{pip_tp})\n🛑 *SL:* `{sl:.5f}` (-{pip_sl}){liq_text}\n\n📈 *{timeframe_str}:* RSI {rsi} | {ema}\n⏰ *Expiry:* {timeframe_str}\n⚡ *Conf:* {random.randint(84,96)}%"
+    bot.send_message(m.chat.id, txt, parse_mode="Markdown", reply_markup=timeframe_keyboard(clean_asset))
 
 def run_bot():
     setup_menu()
