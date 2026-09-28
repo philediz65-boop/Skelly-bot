@@ -1,7 +1,11 @@
-import os, threading, random, requests, re
+import os, threading, random, requests, re, io
 from flask import Flask
 import telebot
 from telebot import types
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import numpy as np
 
 TOKEN = os.getenv("BOT_TOKEN")
 bot = telebot.TeleBot(TOKEN)
@@ -9,7 +13,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "SkellysPro FINAL SMART + LEVERAGE - LIVE"
+    return "SkellysPro FINAL CHART + LEVERAGE - LIVE"
 
 BINODEX_POCKET = ["EUR/USD OTC","GBP/USD OTC","USD/JPY OTC","AUD/USD OTC","USD/CAD OTC","EUR/GBP OTC","EUR/JPY OTC","GBP/JPY OTC","AUD/JPY OTC","NZD/USD OTC","EUR/AUD OTC","EUR/CAD OTC","GBP/AUD OTC","USD/CHF OTC","CHF/JPY OTC","EUR/USD","GBP/USD","USD/JPY","BTC/USD OTC","ETH/USD OTC"]
 FOREX_PAIRS = ["EUR/USD","GBP/USD","USD/JPY","AUD/USD","USD/CAD","NZD/USD","USD/CHF","EUR/GBP","EUR/JPY","EUR/AUD","GBP/JPY","AUD/JPY","CAD/JPY","CHF/JPY","NZD/JPY"]
@@ -37,12 +41,60 @@ def get_live_price(symbol_name):
     except: pass
     return None
 
+def get_history_for_chart(symbol_name, entry_price):
+    try:
+        import yfinance as yf
+        ticker_map = {"EUR/USD":"EURUSD=X","GBP/USD":"GBPUSD=X","USD/JPY":"USDJPY=X","XAU/USD":"GC=F","GOLD":"GC=F","BTC":"BTC-USD","ETH":"ETH-USD","US30":"^DJI","NAS100":"^IXIC","SPX500":"^GSPC"}
+        ticker = "BTC-USD"
+        for k,v in ticker_map.items():
+            if k in symbol_name.upper(): ticker=v; break
+        data = yf.download(ticker, period="1d", interval="15m", progress=False, timeout=5)
+        if not data.empty and len(data)>30:
+            return list(data['Close'].tail(50))
+    except: pass
+    # Fallback fake chart data around entry
+    fake = [entry_price * random.uniform(0.985, 1.015) for _ in range(50)]
+    fake[-1] = entry_price
+    return fake
+
+def create_chart_image(symbol, entry, tp, sl, tf_str, is_buy):
+    try:
+        history = get_history_for_chart(symbol, entry)
+        plt.figure(figsize=(10,5), dpi=150)
+        plt.style.use('dark_background')
+        x = np.arange(len(history))
+        plt.plot(x, history, color='#00ff88', linewidth=1.5, label='Price')
+
+        # Lines
+        plt.axhline(entry, color='white', linestyle='--', linewidth=1.2, label=f'Entry {entry:.2f}')
+        plt.axhline(tp, color='#00ff00', linestyle='-', linewidth=1.5, label=f'TP {tp:.2f}')
+        plt.axhline(sl, color='#ff3333', linestyle='-', linewidth=1.5, label=f'SL {sl:.2f}')
+
+        # Fill TP/SL zone
+        if is_buy:
+            plt.fill_between(x, entry, tp, color='green', alpha=0.15)
+            plt.fill_between(x, entry, sl, color='red', alpha=0.15)
+        else:
+            plt.fill_between(x, tp, entry, color='green', alpha=0.15)
+            plt.fill_between(x, sl, entry, color='red', alpha=0.15)
+
+        plt.title(f"{symbol.upper()} - {tf_str} | {'BUY/LONG' if is_buy else 'SELL/SHORT'}", color='white', fontsize=14, fontweight='bold')
+        plt.legend(loc='upper left', fontsize=8)
+        plt.grid(alpha=0.15)
+        plt.tight_layout()
+
+        path = f"/tmp/chart_{random.randint(1000,9999)}.png"
+        plt.savefig(path, facecolor='#0e0e0e')
+        plt.close()
+        return path
+    except Exception as e:
+        print(f"Chart error {e}")
+        return None
+
 def generate_analysis(symbol, price):
     rsi = random.randint(35, 75)
     ema = random.choice(["Bullish crossover","Bearish crossover","Strong uptrend","Strong downtrend"])
-    sup = price * 0.998 if price else 0
-    res = price * 1.002 if price else 0
-    return rsi, ema, sup, res
+    return rsi, ema, 0, 0
 
 def parse_timeframe(text):
     text = text.lower()
@@ -140,24 +192,31 @@ def setup_menu():
         ])
     except: pass
 
+def send_signal_with_chart(chat_id, asset, tf_str, minutes, price, asset_type):
+    is_buy = random.choice([True,False])
+    tp,sl,pt,ps = get_tp_sl_by_timeframe(price,is_buy,asset_type,minutes)
+    rsi,ema,_,_ = generate_analysis(asset, price)
+    sig = "BUY CALL 🟢 STRONG" if is_buy else "SELL PUT 🔴 STRONG"
+    leverage_text=""; liq_text=""
+    if asset_type=="crypto":
+        lev=random.choice([10,15,20]); sig="LONG 🟢" if is_buy else "SHORT 🔴"
+        leverage_text=f"\n💥 *Leverage:* `{lev}X Cross`"
+        liq=price*0.92 if is_buy else price*1.08
+        liq_text=f"\n💀 *Liq:* `${liq:,.2f}`"
+    txt = f"📊 *{asset.upper()} - {tf_str}*\n\n💰 *Entry:* `{price:.5f}`\n🤖 *Signal:* {sig}{leverage_text}\n🎯 *TP:* `{tp:.5f}` (+{pt})\n🛑 *SL:* `{sl:.5f}` (-{ps}){liq_text}\n\n📈 *{tf_str}:* RSI {rsi} | {ema}\n⏰ *Expiry:* {tf_str}\n⚡ *Conf:* {random.randint(84,96)}%"
+    chart_path = create_chart_image(asset, price, tp, sl, tf_str, is_buy)
+    if chart_path and os.path.exists(chart_path):
+        with open(chart_path, 'rb') as photo:
+            bot.send_photo(chat_id, photo, caption=txt, parse_mode="Markdown", reply_markup=timeframe_keyboard(asset))
+        os.remove(chart_path)
+    else:
+        bot.send_message(chat_id, txt, parse_mode="Markdown", reply_markup=timeframe_keyboard(asset))
+
 @bot.message_handler(commands=['start'])
 def start(m):
     global ALL_COINS
     if not ALL_COINS: ALL_COINS=get_all_coins()
-    bot.send_message(m.chat.id, f"🔥 *SKELLY'S PRO - FINAL + LEVERAGE*\n\n✅ Click buttons or type e.g BTC 1H\n✅ True TP/SL per timeframe\n✅ Crypto Leverage added\n\n👇 Select:", reply_markup=main_menu(), parse_mode="Markdown")
-
-@bot.message_handler(commands=['binodex','forex','indices','mt5','gold','crypto'])
-def cmds(m):
-    cmd=m.text.replace("/","")
-    if "binodex" in cmd: bot.send_message(m.chat.id, f"🔮 *BINODEX*", reply_markup=paginated_list(BINODEX_POCKET,0,"bin_pocket"), parse_mode="Markdown")
-    elif "forex" in cmd: bot.send_message(m.chat.id, f"💱 *FOREX*", reply_markup=paginated_list(FOREX_PAIRS,0,"forex"), parse_mode="Markdown")
-    elif "indices" in cmd: bot.send_message(m.chat.id, f"📈 *INDICES*", reply_markup=paginated_list(INDICES_LIST,0,"indices"), parse_mode="Markdown")
-    elif "mt5" in cmd: bot.send_message(m.chat.id, f"📊 *MT5*", reply_markup=paginated_list(MT5_LIST,0,"mt5"), parse_mode="Markdown")
-    elif "gold" in cmd: bot.send_message(m.chat.id, f"🥇 *GOLD*", reply_markup=paginated_list(GOLD_LIST,0,"gold"), parse_mode="Markdown")
-    elif "crypto" in cmd:
-        global ALL_COINS
-        if not ALL_COINS: ALL_COINS=get_all_coins()
-        bot.send_message(m.chat.id, f"₿ *CRYPTO*", reply_markup=coins_menu_paged(0), parse_mode="Markdown")
+    bot.send_message(m.chat.id, f"🔥 *SKELLY'S PRO - CHART + LEVERAGE*\n\n✅ Chart with lines\n✅ True TP/SL per timeframe\n✅ Type e.g BTC 1H\n\n👇 Select:", reply_markup=main_menu(), parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda c: True)
 def cb(call):
@@ -175,49 +234,36 @@ def cb(call):
             elif "gold" in prefix: bot.edit_message_text(f"🥇 *GOLD*", call.message.chat.id, call.message.message_id, reply_markup=paginated_list(GOLD_LIST,page,"gold"), parse_mode="Markdown")
             elif "all_coins" in prefix: bot.edit_message_text(f"₿ *CRYPTO*", call.message.chat.id, call.message.message_id, reply_markup=coins_menu_paged(page), parse_mode="Markdown")
         elif d.startswith("an_"):
-            # an_60|EUR/USD
             mins_asset = d[3:].split("|",1)
             minutes = int(mins_asset[0]); asset = mins_asset[1] if len(mins_asset)>1 else "EUR/USD"
             tf_str = tf_label(minutes)
-            price = get_live_price(asset)
-            if not price:
-                if "EUR" in asset: price=random.uniform(1.08,1.09)
-                elif "XAU" in asset or "GOLD" in asset: price=random.uniform(2030,2060)
-                elif "US30" in asset: price=random.uniform(38500,39000)
-                elif "BTC" in asset: price=random.uniform(67000,68500)
-                else: price=random.uniform(1.08,1.27)
+            price = get_live_price(asset) or random.uniform(1.08,1.09)
+            if "XAU" in asset or "GOLD" in asset: price = get_live_price(asset) or random.uniform(2030,2060)
+            elif "BTC" in asset: price = get_live_price(asset) or random.uniform(67000,68500)
+            elif "US30" in asset: price = get_live_price(asset) or random.uniform(38500,39000)
             asset_type = "forex"
             if any(x in asset.upper() for x in ["XAU","GOLD","XAG","SILVER"]): asset_type = "gold"
             elif any(x in asset.upper() for x in ["US30","NAS","SPX","GER","UK100","VIX","JPN","AUS"]): asset_type = "indices"
             elif any(x in asset.upper() for x in ["BTC","ETH","SOL","COIN"]): asset_type = "crypto"
-            is_buy = random.choice([True,False])
-            tp,sl,pt,ps = get_tp_sl_by_timeframe(price,is_buy,asset_type,minutes)
-            rsi,ema,sup,res = generate_analysis(asset, price)
-            sig = "BUY CALL 🟢 STRONG" if is_buy else "SELL PUT 🔴 STRONG"
-            if asset_type=="crypto":
-                lev = random.choice([10,15,20]); sig = "LONG 🟢" if is_buy else "SHORT 🔴"
-                txt = f"₿ *{asset} - {tf_str} FUTURES*\n\n💰 Entry: `${price:,.4f}`\n🤖 Signal: {sig} {lev}X\n💥 Leverage: `{lev}X Cross`\n🎯 TP: `${tp:,.4f}` (+{pt})\n🛑 SL: `${sl:,.4f}` (-{ps})\n💀 Liq: `${price*0.92 if is_buy else price*1.08:,.2f}`\n\n📈 RSI:{rsi} | {ema}\n⏰ {tf_str}\n⚡ {random.randint(84,96)}%"
-            else:
-                txt = f"📊 *{asset} - {tf_str}*\n\n💰 Entry: `{price:.5f}`\n🤖 {sig}\n🎯 TP: `{tp:.5f}` (+{pt})\n🛑 SL: `{sl:.5f}` (-{ps})\n\n📈 {tf_str}: RSI {rsi} | {ema}\n⏰ Expiry: {tf_str}\n⚡ {random.randint(84,96)}%"
-            bot.send_message(call.message.chat.id, txt, parse_mode="Markdown", reply_markup=timeframe_keyboard(asset))
+            send_signal_with_chart(call.message.chat.id, asset, tf_str, minutes, price, asset_type)
         elif d.startswith("coin_"):
-            # coin_bitcoin_60
             parts = d.split("_"); coin_id = "_".join(parts[1:-1]) if len(parts)>2 else parts[1]; mins = int(parts[-1]) if parts[-1].isdigit() else 5
             coin = next((c for c in ALL_COINS if c['id']==coin_id),None)
             if coin:
-                price=coin['current_price']; is_buy=random.choice([True,False]); leverage = random.choice([5,10,15,20,25])
+                price=coin['current_price']; is_buy=random.choice([True,False]); leverage = random.choice([10,15,20])
                 tp,sl,pt,ps=get_tp_sl_by_timeframe(price,is_buy,"crypto",mins); tf_str=tf_label(mins)
-                sig="LONG 🟢" if is_buy else "SHORT 🔴"; rsi,ema,sup,res=generate_analysis(coin['symbol'],price)
-                liq_price = price * (0.95 if is_buy else 1.05) if leverage==20 else price * (0.90 if is_buy else 1.10)
-                txt=f"₿ *{coin['name']} ({coin['symbol'].upper()}) - {tf_str} FUTURES*\n\n💰 Entry: `${price:,.4f}`\n🤖 Signal: {sig} {leverage}X\n💥 Leverage: `{leverage}X Cross`\n🎯 TP: `${tp:,.4f}` (+{pt})\n🛑 SL: `${sl:,.4f}` (-{ps})\n💀 Liq: `${liq_price:,.4f}`\n\n📈 RSI:{rsi} | {ema}\n⚡ Conf: {random.randint(86,96)}%\n⏰ {tf_str}"
+                sig="LONG 🟢" if is_buy else "SHORT 🔴"; rsi,ema,_,_=generate_analysis(coin['symbol'],price)
+                txt=f"₿ *{coin['name']} ({coin['symbol'].upper()}) - {tf_str} FUTURES*\n\n💰 Entry: `${price:,.4f}`\n🤖 Signal: {sig} {leverage}X\n💥 Leverage: `{leverage}X Cross`\n🎯 TP: `${tp:,.4f}` (+{pt})\n🛑 SL: `${sl:,.4f}` (-{ps})\n💀 Liq: `${price*0.90 if is_buy else price*1.10:,.4f}`\n\n📈 RSI:{rsi} | {ema}\n⚡ Conf: {random.randint(86,96)}%\n⏰ {tf_str}"
+                chart_path = create_chart_image(coin['symbol'], price, tp, sl, tf_str, is_buy)
                 kb = types.InlineKeyboardMarkup(row_width=4)
-                kb.row(
-                    types.InlineKeyboardButton("5M", callback_data=f"coin_{coin_id}_5"),
-                    types.InlineKeyboardButton("1H", callback_data=f"coin_{coin_id}_60"),
-                    types.InlineKeyboardButton("4H", callback_data=f"coin_{coin_id}_240")
-                )
+                kb.row(types.InlineKeyboardButton("5M", callback_data=f"coin_{coin_id}_5"), types.InlineKeyboardButton("1H", callback_data=f"coin_{coin_id}_60"), types.InlineKeyboardButton("4H", callback_data=f"coin_{coin_id}_240"))
                 kb.add(types.InlineKeyboardButton("🔙 Back", callback_data="all_coins_0"))
-                bot.send_message(call.message.chat.id, txt, parse_mode="Markdown", reply_markup=kb)
+                if chart_path:
+                    with open(chart_path,'rb') as photo:
+                        bot.send_photo(call.message.chat.id, photo, caption=txt, parse_mode="Markdown", reply_markup=kb)
+                    os.remove(chart_path)
+                else:
+                    bot.send_message(call.message.chat.id, txt, parse_mode="Markdown", reply_markup=kb)
     except Exception as e: print(f"CB Error {e} - {d}")
 
 @bot.message_handler(content_types=['text'])
@@ -243,18 +289,7 @@ def handle_text(m):
         elif "BTC" in text: price=random.uniform(67000,68500)
         elif "US30" in text: price=random.uniform(38500,39000)
         else: price=random.uniform(1.08,1.27)
-    is_buy = random.choice([True, False])
-    tp, sl, pip_tp, pip_sl = get_tp_sl_by_timeframe(price, is_buy, asset_type, minutes)
-    rsi,ema,sup,res = generate_analysis(clean_asset, price)
-    sig = "BUY CALL 🟢 STRONG" if is_buy else "SELL PUT 🔴 STRONG"
-    leverage_text = ""; liq_text = ""
-    if asset_type == "crypto":
-        lev = random.choice([10,15,20]); sig = "LONG 🟢" if is_buy else "SHORT 🔴"
-        leverage_text = f"\n💥 *Leverage:* `{lev}X Cross`"
-        liq = price * 0.92 if is_buy else price * 1.08
-        liq_text = f"\n💀 *Liq:* `${liq:,.2f}`"
-    txt = f"📊 *{clean_asset.upper()} - {timeframe_str}*\n\n💰 *Entry:* `{price:.5f}`\n🤖 *Signal:* {sig}{leverage_text}\n🎯 *TP:* `{tp:.5f}` (+{pip_tp})\n🛑 *SL:* `{sl:.5f}` (-{pip_sl}){liq_text}\n\n📈 *{timeframe_str}:* RSI {rsi} | {ema}\n⏰ *Expiry:* {timeframe_str}\n⚡ *Conf:* {random.randint(84,96)}%"
-    bot.send_message(m.chat.id, txt, parse_mode="Markdown", reply_markup=timeframe_keyboard(clean_asset))
+    send_signal_with_chart(m.chat.id, clean_asset, timeframe_str, minutes, price, asset_type)
 
 def run_bot():
     setup_menu()
