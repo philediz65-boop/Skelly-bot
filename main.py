@@ -13,7 +13,7 @@ print(f"TOKEN CHECK: {'OK' if TOKEN else 'MISSING'}")
 app = Flask(__name__)
 @app.route('/')
 def home():
-    return "SkellysPro - LIVE WIN TRACKER OK"
+    return "SkellysPro - FINAL LIVE OK"
 
 if not TOKEN:
     print("ERROR: BOT_TOKEN not set")
@@ -219,51 +219,86 @@ def check_pending_trades():
 def send_signal_with_chart(chat_id,asset,tf_str,minutes,price,atype):
     history=get_history_for_chart(asset,price); analysis=generate_full_analysis(history,price,asset)
     is_buy=analysis['is_buy']; tp,sl,pt,ps=get_tp_sl_by_timeframe(price,is_buy,atype,minutes)
-    sig="BUY CALL STRONG" if is_buy else "SELL PUT STRONG"; lev_txt=""; liq_txt=""
-    if atype=="crypto":
-        lev=random.choice([10,15,20]); sig="LONG" if is_buy else "SHORT"; lev_txt=f"\nLeverage: {lev}X Cross"; liq=price*0.92 if is_buy else price*1.08; liq_txt=f"\nLiq: ${liq:.2f}"
+    sig="🟢 BUY / LONG" if is_buy else "🔴 SELL / SHORT"
+    lev = random.choice([10,15,20,25]) if atype=="crypto" else random.choice([50,100,200]) if atype in ["forex","gold","indices"] else 20
+    liq = price*0.92 if is_buy else price*1.08
     fund=get_fundamentals(asset)
     wr=(stats["wins"]/stats["total"]*100) if stats["total"]>0 else 0
-    txt=f"{asset.upper()} - {tf_str} SNIPER\n\nEntry: {price:.5f}\nSignal: {sig}{lev_txt}\nTP: {tp:.5f} (+{pt})\nSL: {sl:.5f} (-{ps}){liq_txt}\n\nTECHNICAL:\nTrend: {analysis['trend']}\nRSI ({analysis['rsi']}): {analysis['rsi_sig']}\nEMA: {analysis['ema9']}/{analysis['ema21']}/{analysis['ema50']}\nMACD: {analysis['macd']}\nSup: {analysis['support']} | Res: {analysis['resistance']}\n\n{fund}\n\nBot Win Rate: {wr:.1f}% ({stats['wins']}W/{stats['losses']}L/{stats['total']})\nConf: {analysis['conf']}% | {tf_str}"
+    txt=(
+        f"💎 {asset.upper()} - {tf_str} SNIPER\n\n"
+        f"💰 Entry: {price:.4f}\n"
+        f"📈 Signal: {sig}\n"
+        f"⚡ Leverage: {lev}x Cross\n"
+        f"💧 Liq Price: {liq:.4f}\n"
+        f"🎯 TP: {tp:.4f} (+{pt})\n"
+        f"🛑 SL: {sl:.4f} (-{ps})\n\n"
+        f"📊 RSI ({analysis['rsi']}): {analysis['rsi_sig']}\n"
+        f"📉 EMA: {analysis['ema9']} / {analysis['ema21']} / {analysis['ema50']}\n"
+        f"📈 Trend: {analysis['trend']}\n"
+        f"🔀 MACD: {analysis['macd']}\n"
+        f"🧱 Support: {analysis['support']} | Resistance: {analysis['resistance']}\n\n"
+        f"📰 {fund}\n\n"
+        f"🏆 Win Rate: {wr:.1f}% ({stats['wins']}W/{stats['losses']}L/{stats['total']})\n"
+        f"✅ Confidence: {analysis['conf']}% | ⏰ {tf_str}"
+    )
     add_trade(asset,price,tp,sl,is_buy,tf_str)
     chart=create_chart_image(asset,price,tp,sl,tf_str,is_buy)
     if chart and os.path.exists(chart):
-        with open(chart,'rb') as photo: bot.send_photo(chat_id,photo,caption=txt,parse_mode="Markdown",reply_markup=timeframe_keyboard(asset))
+        with open(chart,'rb') as photo:
+            bot.send_photo(chat_id,photo,caption=txt,reply_markup=timeframe_keyboard(asset))
         os.remove(chart)
-    else: bot.send_message(chat_id,txt,parse_mode="Markdown",reply_markup=timeframe_keyboard(asset))
+    else:
+        bot.send_message(chat_id,txt,reply_markup=timeframe_keyboard(asset))
 
 if bot:
     @bot.message_handler(commands=['start'])
     def start(m):
         global ALL_COINS
         if not ALL_COINS: ALL_COINS=get_all_coins()
-        bot.send_message(m.chat.id,"SKELLY'S PRO - FIXED\nReal price 82k+\nSniper + Win Tracker\nSelect:",reply_markup=main_menu(),parse_mode="Markdown")
+        bot.send_message(m.chat.id,"SKELLY'S PRO - FINAL\n💎 Real Price\n📊 RSI/EMA\n⚡ Leverage\n🏆 Win Tracker\nSelect:",reply_markup=main_menu())
 
     @bot.message_handler(commands=['stats'])
     def stats_cmd(m):
         wr=(stats["wins"]/stats["total"]*100) if stats["total"]>0 else 0
-        txt=f"YOUR BOT PERFORMANCE\n\nWin Rate: {wr:.1f}%\nWins: {stats['wins']}\nLosses: {stats['losses']}\nTotal: {stats['total']}\nPending: {stats['pending']}"
+        txt=f"🏆 YOUR BOT PERFORMANCE\n\n✅ Win Rate: {wr:.1f}%\n🟢 Wins: {stats['wins']}\n🔴 Losses: {stats['losses']}\n📦 Total: {stats['total']}\n⏳ Pending: {stats['pending']}"
         kb=types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("Menu",callback_data="menu"))
-        bot.send_message(m.chat.id,txt,parse_mode="Markdown",reply_markup=kb)
+        bot.send_message(m.chat.id,txt,reply_markup=kb)
 
     @bot.callback_query_handler(func=lambda c: True)
     def cb(call):
         global ALL_COINS; d=call.data
         try:
-            if d=="menu": bot.edit_message_text("MAIN MENU",call.message.chat.id,call.message.message_id,reply_markup=main_menu(),parse_mode="Markdown")
+            if d=="menu":
+                try: bot.edit_message_text("MAIN MENU",call.message.chat.id,call.message.message_id,reply_markup=main_menu())
+                except: bot.send_message(call.message.chat.id,"MAIN MENU",reply_markup=main_menu())
             elif d=="stats":
                 wr=(stats["wins"]/stats["total"]*100) if stats["total"]>0 else 0
-                txt=f"YOUR BOT PERFORMANCE\n\nWin Rate: {wr:.1f}%\nWins: {stats['wins']}\nLosses: {stats['losses']}\nTotal: {stats['total']}\nPending: {stats['pending']}"
+                txt=f"🏆 YOUR BOT PERFORMANCE\n\n✅ Win Rate: {wr:.1f}%\n🟢 Wins: {stats['wins']}\n🔴 Losses: {stats['losses']}\n📦 Total: {stats['total']}\n⏳ Pending: {stats['pending']}"
                 kb=types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("Menu",callback_data="menu"))
-                bot.edit_message_text(txt,call.message.chat.id,call.message.message_id,parse_mode="Markdown",reply_markup=kb)
+                try: bot.edit_message_text(txt,call.message.chat.id,call.message.message_id,reply_markup=kb)
+                except:
+                    try: bot.edit_message_caption(caption=txt,chat_id=call.message.chat.id,message_id=call.message.message_id,reply_markup=kb)
+                    except: bot.send_message(call.message.chat.id,txt,reply_markup=kb)
             elif d.startswith("bin_pocket_") or d.startswith("forex_") or d.startswith("indices_") or d.startswith("mt5_") or d.startswith("gold_") or d.startswith("all_coins_"):
                 prefix=d.rsplit("_",1)[0]; page=int(d.rsplit("_",1)[1])
-                if "bin_pocket" in prefix: bot.edit_message_text("BINODEX",call.message.chat.id,call.message.message_id,reply_markup=paginated_list(BINODEX_POCKET,page,"bin_pocket"),parse_mode="Markdown")
-                elif "forex" in prefix: bot.edit_message_text("FOREX",call.message.chat.id,call.message.message_id,reply_markup=paginated_list(FOREX_PAIRS,page,"forex"),parse_mode="Markdown")
-                elif "indices" in prefix: bot.edit_message_text("INDICES",call.message.chat.id,call.message.message_id,reply_markup=paginated_list(INDICES_LIST,page,"indices"),parse_mode="Markdown")
-                elif "mt5" in prefix: bot.edit_message_text("MT5",call.message.chat.id,call.message.message_id,reply_markup=paginated_list(MT5_LIST,page,"mt5"),parse_mode="Markdown")
-                elif "gold" in prefix: bot.edit_message_text("GOLD",call.message.chat.id,call.message.message_id,reply_markup=paginated_list(GOLD_LIST,page,"gold"),parse_mode="Markdown")
-                elif "all_coins" in prefix: bot.edit_message_text("CRYPTO",call.message.chat.id,call.message.message_id,reply_markup=coins_menu_paged(page),parse_mode="Markdown")
+                if "bin_pocket" in prefix:
+                    try: bot.edit_message_text("BINODEX",call.message.chat.id,call.message.message_id,reply_markup=paginated_list(BINODEX_POCKET,page,"bin_pocket"))
+                    except: bot.send_message(call.message.chat.id,"BINODEX",reply_markup=paginated_list(BINODEX_POCKET,page,"bin_pocket"))
+                elif "forex" in prefix:
+                    try: bot.edit_message_text("FOREX",call.message.chat.id,call.message.message_id,reply_markup=paginated_list(FOREX_PAIRS,page,"forex"))
+                    except: bot.send_message(call.message.chat.id,"FOREX",reply_markup=paginated_list(FOREX_PAIRS,page,"forex"))
+                elif "indices" in prefix:
+                    try: bot.edit_message_text("INDICES",call.message.chat.id,call.message.message_id,reply_markup=paginated_list(INDICES_LIST,page,"indices"))
+                    except: bot.send_message(call.message.chat.id,"INDICES",reply_markup=paginated_list(INDICES_LIST,page,"indices"))
+                elif "mt5" in prefix:
+                    try: bot.edit_message_text("MT5",call.message.chat.id,call.message.message_id,reply_markup=paginated_list(MT5_LIST,page,"mt5"))
+                    except: bot.send_message(call.message.chat.id,"MT5",reply_markup=paginated_list(MT5_LIST,page,"mt5"))
+                elif "gold" in prefix:
+                    try: bot.edit_message_text("GOLD",call.message.chat.id,call.message.message_id,reply_markup=paginated_list(GOLD_LIST,page,"gold"))
+                    except: bot.send_message(call.message.chat.id,"GOLD",reply_markup=paginated_list(GOLD_LIST,page,"gold"))
+                elif "all_coins" in prefix:
+                    try: bot.edit_message_text("CRYPTO",call.message.chat.id,call.message.message_id,reply_markup=coins_menu_paged(page))
+                    except: bot.send_message(call.message.chat.id,"CRYPTO",reply_markup=coins_menu_paged(page))
             elif d.startswith("an_"):
                 mins_asset=d[3:].split("|",1); minutes=int(mins_asset[0]); asset=mins_asset[1] if len(mins_asset)>1 else "EUR/USD"; tf_str=tf_label(minutes)
                 price=get_live_price(asset) or random.uniform(1.08,1.09)
@@ -274,24 +309,41 @@ if bot:
                 coin=next((c for c in ALL_COINS if c['id']==cid),None)
                 if coin:
                     price=coin['current_price']; history=get_history_for_chart(coin['symbol'],price); analysis=generate_full_analysis(history,price,coin['symbol'])
-                    is_buy=analysis['is_buy']; tp,sl,pt,ps=get_tp_sl_by_timeframe(price,is_buy,"crypto",mins); tf_str=tf_label(mins); add_trade(coin['symbol'],price,tp,sl,is_buy,tf_str)
+                    is_buy=analysis['is_buy']; tp,sl,pt,ps=get_tp_sl_by_timeframe(price,is_buy,"crypto",mins); tf_str=tf_label(mins)
+                    lev=random.choice([10,15,20,25]); liq=price*0.92 if is_buy else price*1.08
                     wr=(stats['wins']/stats['total']*100) if stats['total']>0 else 0
-                    txt=f"{coin['name']} ({coin['symbol'].upper()}) - {tf_str} SNIPER\nEntry: ${price:.4f}\nSignal: {'LONG' if is_buy else 'SHORT'}\nTP: ${tp:.4f}\nSL: ${sl:.4f}\nWin Rate: {wr:.1f}%"
+                    txt=(
+                        f"💎 {coin['name']} ({coin['symbol'].upper()}) - {tf_str} SNIPER\n\n"
+                        f"💰 Entry: ${price:.4f}\n"
+                        f"📈 Signal: {'🟢 LONG' if is_buy else '🔴 SHORT'}\n"
+                        f"⚡ Leverage: {lev}x Cross\n"
+                        f"💧 Liq Price: ${liq:.4f}\n"
+                        f"🎯 TP: ${tp:.4f}\n"
+                        f"🛑 SL: ${sl:.4f}\n\n"
+                        f"📊 RSI ({analysis['rsi']}): {analysis['rsi_sig']}\n"
+                        f"📉 EMA: {analysis['ema9']} / {analysis['ema21']} / {analysis['ema50']}\n"
+                        f"📈 Trend: {analysis['trend']}\n"
+                        f"🧱 Sup: {analysis['support']} | Res: {analysis['resistance']}\n\n"
+                        f"🏆 Win Rate: {wr:.1f}%\n"
+                        f"✅ Conf: {analysis['conf']}%"
+                    )
+                    add_trade(coin['symbol'],price,tp,sl,is_buy,tf_str)
                     chart=create_chart_image(coin['symbol'],price,tp,sl,tf_str,is_buy)
                     kb=types.InlineKeyboardMarkup(row_width=4)
                     kb.row(types.InlineKeyboardButton("5M",callback_data=f"coin_{cid}_5"),types.InlineKeyboardButton("1H",callback_data=f"coin_{cid}_60"),types.InlineKeyboardButton("4H",callback_data=f"coin_{cid}_240"))
                     kb.row(types.InlineKeyboardButton("Refresh",callback_data=f"coin_{cid}_{mins}"),types.InlineKeyboardButton("Stats",callback_data="stats"),types.InlineKeyboardButton("Back",callback_data="all_coins_0"))
                     if chart:
-                        with open(chart,'rb') as ph: bot.send_photo(call.message.chat.id,ph,caption=txt,parse_mode="Markdown",reply_markup=kb)
+                        with open(chart,'rb') as ph: bot.send_photo(call.message.chat.id,ph,caption=txt,reply_markup=kb)
                         os.remove(chart)
-                    else: bot.send_message(call.message.chat.id,txt,parse_mode="Markdown",reply_markup=kb)
+                    else: bot.send_message(call.message.chat.id,txt,reply_markup=kb)
         except Exception as e: print(f"CB Error {e} - {d}")
 
     @bot.message_handler(content_types=['text'])
     def handle_text(m):
         if m.text.startswith('/'): return
         orig=m.text; t=m.text.upper().strip()
-        if t in ["HI","HELLO","HEY","START","MENU","OK","YO","HELP"]: bot.send_message(m.chat.id,"Main Menu",reply_markup=main_menu(),parse_mode="Markdown"); return
+        if t in ["HI","HELLO","HEY","START","MENU","OK","YO","HELP"]:
+            bot.send_message(m.chat.id,"Main Menu",reply_markup=main_menu()); return
         tf_str,mins=parse_timeframe(orig.lower()); clean=re.sub(r'\d+\s*(m|min|h|hour|d|day)','',orig,flags=re.IGNORECASE).replace("prediction","").strip() or orig
         price=get_live_price(clean) or (random.uniform(1.08,1.09) if "EUR" in t else random.uniform(2030,2060) if "XAU" in t or "GOLD" in t else random.uniform(38500,39000) if "US30" in t else random.uniform(1.08,1.27))
         up=clean.upper(); atype="gold" if any(x in up for x in ["XAU","GOLD","XAG"]) else "indices" if any(x in up for x in ["US30","NAS","SPX","GER","UK100","VIX"]) else "forex" if "EUR" in up or "GBP" in up or "OTC" in up else "crypto"
