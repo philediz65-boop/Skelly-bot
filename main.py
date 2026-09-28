@@ -31,7 +31,7 @@ def get_all_coins():
 def get_live_price(symbol_name):
     try:
         import yfinance as yf
-        ticker_map = {"EUR/USD":"EURUSD=X","GBP/USD":"GBPUSD=X","USD/JPY":"USDJPY=X","XAU/USD":"GC=F","GOLD":"GC=F","BTC":"BTC-USD","ETH":"ETH-USD","US30":"^DJI","NAS100":"^IXIC","SPX500":"^GSPC"}
+        ticker_map = {"EUR/USD":"EURUSD=X","GBP/USD":"GBPUSD=X","USD/JPY":"USDJPY=X","XAU/USD":"GC=F","GOLD":"GC=F","BTC":"BTC-USD","ETH":"ETH-USD","ZEC":"ZEC-USD","SOL":"SOL-USD","US30":"^DJI","NAS100":"^IXIC","SPX500":"^GSPC"}
         ticker = None
         for k,v in ticker_map.items():
             if k in symbol_name.upper(): ticker=v; break
@@ -44,7 +44,7 @@ def get_live_price(symbol_name):
 def get_history_for_chart(symbol_name, entry_price):
     try:
         import yfinance as yf
-        ticker_map = {"EUR/USD":"EURUSD=X","GBP/USD":"GBPUSD=X","USD/JPY":"USDJPY=X","XAU/USD":"GC=F","GOLD":"GC=F","BTC":"BTC-USD","ETH":"ETH-USD","US30":"^DJI","NAS100":"^IXIC","SPX500":"^GSPC"}
+        ticker_map = {"EUR/USD":"EURUSD=X","GBP/USD":"GBPUSD=X","USD/JPY":"USDJPY=X","XAU/USD":"GC=F","GOLD":"GC=F","BTC":"BTC-USD","ETH":"ETH-USD","ZEC":"ZEC-USD","US30":"^DJI","NAS100":"^IXIC","SPX500":"^GSPC"}
         ticker = "BTC-USD"
         for k,v in ticker_map.items():
             if k in symbol_name.upper(): ticker=v; break
@@ -52,7 +52,6 @@ def get_history_for_chart(symbol_name, entry_price):
         if not data.empty and len(data)>30:
             return list(data['Close'].tail(50))
     except: pass
-    # Fallback fake chart data around entry
     fake = [entry_price * random.uniform(0.985, 1.015) for _ in range(50)]
     fake[-1] = entry_price
     return fake
@@ -64,25 +63,19 @@ def create_chart_image(symbol, entry, tp, sl, tf_str, is_buy):
         plt.style.use('dark_background')
         x = np.arange(len(history))
         plt.plot(x, history, color='#00ff88', linewidth=1.5, label='Price')
-
-        # Lines
         plt.axhline(entry, color='white', linestyle='--', linewidth=1.2, label=f'Entry {entry:.2f}')
         plt.axhline(tp, color='#00ff00', linestyle='-', linewidth=1.5, label=f'TP {tp:.2f}')
         plt.axhline(sl, color='#ff3333', linestyle='-', linewidth=1.5, label=f'SL {sl:.2f}')
-
-        # Fill TP/SL zone
         if is_buy:
             plt.fill_between(x, entry, tp, color='green', alpha=0.15)
             plt.fill_between(x, entry, sl, color='red', alpha=0.15)
         else:
             plt.fill_between(x, tp, entry, color='green', alpha=0.15)
             plt.fill_between(x, sl, entry, color='red', alpha=0.15)
-
         plt.title(f"{symbol.upper()} - {tf_str} | {'BUY/LONG' if is_buy else 'SELL/SHORT'}", color='white', fontsize=14, fontweight='bold')
         plt.legend(loc='upper left', fontsize=8)
         plt.grid(alpha=0.15)
         plt.tight_layout()
-
         path = f"/tmp/chart_{random.randint(1000,9999)}.png"
         plt.savefig(path, facecolor='#0e0e0e')
         plt.close()
@@ -244,7 +237,8 @@ def cb(call):
             asset_type = "forex"
             if any(x in asset.upper() for x in ["XAU","GOLD","XAG","SILVER"]): asset_type = "gold"
             elif any(x in asset.upper() for x in ["US30","NAS","SPX","GER","UK100","VIX","JPN","AUS"]): asset_type = "indices"
-            elif any(x in asset.upper() for x in ["BTC","ETH","SOL","COIN"]): asset_type = "crypto"
+            elif any(x in asset.upper() for x in ["BTC","ETH","SOL","ZEC","XRP","ADA","DOGE","SHIB","PEPE","AVAX","LINK"]): asset_type = "crypto"
+            else: asset_type = "crypto"
             send_signal_with_chart(call.message.chat.id, asset, tf_str, minutes, price, asset_type)
         elif d.startswith("coin_"):
             parts = d.split("_"); coin_id = "_".join(parts[1:-1]) if len(parts)>2 else parts[1]; mins = int(parts[-1]) if parts[-1].isdigit() else 5
@@ -276,13 +270,17 @@ def handle_text(m):
         return
     timeframe_str, minutes = parse_timeframe(original_text.lower())
     clean_asset = re.sub(r'\d+\s*(m|min|h|hour|d|day)', '', original_text, flags=re.IGNORECASE)
-    clean_asset = clean_asset.replace("prediction","").replace("predict","").replace("signal","").replace("for","").replace("give me","").strip()
+    clean_asset = clean_asset.replace("prediction","").replace("predict","").replace("signal","").replace("for","").replace("give me","").replace("WITH LEVERAGE","").replace("with leverage","").strip()
     if not clean_asset: clean_asset = original_text
     price = get_live_price(clean_asset)
-    asset_type = "forex"
-    if any(x in clean_asset.upper() for x in ["XAU","GOLD","XAG","SILVER"]): asset_type = "gold"
-    elif any(x in clean_asset.upper() for x in ["US30","NAS","SPX","GER","UK100","VIX","JPN","AUS"]): asset_type = "indices"
-    elif any(x in clean_asset.upper() for x in ["BTC","ETH","SOL","COIN","PEPE","DOGE","SHIB"]): asset_type = "crypto"
+    up = clean_asset.upper()
+    asset_type = "crypto"
+    if any(x in up for x in ["XAU","GOLD","XAG","SILVER"]): asset_type = "gold"
+    elif any(x in up for x in ["US30","NAS","SPX","GER","UK100","VIX","JPN","AUS","DOW"]): asset_type = "indices"
+    elif "OTC" in up and any(x in up for x in ["EUR","GBP","USD","AUD","CAD","CHF","JPY","NZD"]): asset_type = "forex"
+    elif "EUR/USD" in up or "GBP/USD" in up: asset_type = "forex"
+    else: asset_type = "crypto"
+
     if not price:
         if "EUR" in text: price=random.uniform(1.08,1.09)
         elif "XAU" in text or "GOLD" in text: price=random.uniform(2030,2060)
